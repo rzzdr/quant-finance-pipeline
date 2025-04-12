@@ -1,0 +1,110 @@
+syntax = "proto3";
+package risk;
+
+option go_package = "github.com/rzzdr/quant-finance-pipeline/pkg/models";
+
+import "google/protobuf/timestamp.proto";
+
+// A set of risk metrics for a portfolio
+message RiskMetrics {
+  string portfolio_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  double value_at_risk = 3;
+  double expected_shortfall = 4;
+  double portfolio_value = 5;
+  map<string, PositionRisk> position_risks = 6;
+  StressTestResults stress_test_results = 7;
+  SensitivityAnalysis sensitivity_analysis = 8;
+}
+
+// Risk metrics for a single position
+message PositionRisk {
+  string symbol = 1;
+  double position_size = 2;
+  double position_value = 3;
+  double value_at_risk = 4;
+  double expected_shortfall = 5;
+  double contribution_to_risk = 6;
+  
+  // Greeks for derivative positions
+  optional DerivativeGreeks greeks = 7;
+}
+
+// The Greeks for a derivative position
+message DerivativeGreeks {
+  double delta = 1;
+  double gamma = 2;
+  double theta = 3;
+  double vega = 4;
+  double rho = 5;
+}
+
+// The results of a stress test
+message StressTestResults {
+  repeated StressScenario scenarios = 1;
+}
+
+// A single stress scenario
+message StressScenario {
+  string scenario_name = 1;
+  double portfolio_value_change = 2;
+  double percentage_change = 3;
+  map<string, double> position_value_changes = 4;
+}
+
+// A sensitivity analysis for a portfolio
+message SensitivityAnalysis {
+  repeated SensitivityFactor factors = 1;
+}
+
+// A single factor in a sensitivity analysis
+message SensitivityFactor {
+  string factor_name = 1;
+  double portfolio_sensitivity = 2;
+  map<string, double> position_sensitivities = 3;
+}
+
+// A hedging strategy for a portfolio
+message HedgingStrategy {
+  string portfolio_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  repeated HedgingAction actions = 3;
+  double estimated_cost = 4;
+  double risk_reduction = 5;
+}
+
+// A single action in a hedging strategy
+message HedgingAction {
+  string instrument = 1;
+  double quantity = 2;
+  double estimated_price = 3;
+  string reason = 4;
+  double risk_offset = 5;
+}
+
+// A risk limit for a portfolio
+message RiskLimit {
+  string portfolio_id = 1;
+  string limit_type = 2;
+  double limit_value = 3;
+  string action_on_breach = 4;
+}
+
+// A risk alert
+message RiskAlert {
+  string alert_id = 1;
+  string portfolio_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  string alert_type = 4;
+  string message = 5;
+  double threshold = 6;
+  double actual_value = 7;
+  AlertSeverity severity = 8;
+}
+
+// Defines the severity of a risk alert
+enum AlertSeverity {
+  INFO = 0;
+  WARNING = 1;
+  CRITICAL = 2;
+}

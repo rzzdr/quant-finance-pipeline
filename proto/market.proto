@@ -1,0 +1,74 @@
+syntax = "proto3";
+package market;
+
+option go_package = "github.com/rzzdr/quant-finance-pipeline/pkg/models";
+
+import "google/protobuf/timestamp.proto";
+
+// Represents market data for a single instrument
+message MarketData {
+  string symbol = 1;
+  string exchange = 2;
+  double price = 3;
+  double volume = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  MarketDataType data_type = 6;
+  
+  repeated PriceLevel bid_levels = 7;
+  repeated PriceLevel ask_levels = 8;
+  
+  optional DerivativeInfo derivative_info = 9;
+}
+
+// Represents a single level in the order book
+message PriceLevel {
+  double price = 1;
+  double quantity = 2;
+  int32 order_count = 3;
+}
+
+// Defines the type of market data
+enum MarketDataType {
+  TRADE = 0;
+  QUOTE = 1;
+  DEPTH = 2;
+  OHLC = 3;
+  INDEX = 4;
+}
+
+// Additional information for derivative instruments
+message DerivativeInfo {
+  DerivativeType type = 1;
+  string underlying_symbol = 2;
+  double strike_price = 3;
+  google.protobuf.Timestamp expiry_date = 4;
+  OptionType option_type = 5;
+  double implied_volatility = 6;
+  double open_interest = 7;
+  double delta = 8;
+  double gamma = 9;
+  double theta = 10;
+  double vega = 11;
+  double rho = 12;
+}
+
+// Defines the type of derivative
+enum DerivativeType {
+  OPTION = 0;
+  FUTURE = 1;
+  FORWARD = 2;
+  SWAP = 3;
+}
+
+// Defines the type of option
+enum OptionType {
+  CALL = 0;
+  PUT = 1;
+}
+
+// Represents a batch of market data
+message MarketDataBatch {
+  repeated MarketData data = 1;
+  google.protobuf.Timestamp batch_timestamp = 2;
+  string source = 3;
+}

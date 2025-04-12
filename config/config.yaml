@@ -1,0 +1,72 @@
+app:
+  name: quant-finance-pipeline
+  environment: development
+  log_level: info
+
+api:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 10s
+  shutdown_timeout: 30s
+  rate_limit: 100 # requests per second
+  cors:
+    allowed_origins: ["*"]
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["Authorization", "Content-Type"]
+
+kafka:
+  brokers: ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"]
+  consumer:
+    group_id: quant-finance-group
+    auto_offset_reset: earliest
+    session_timeout: 30s
+    heartbeat_interval: 3s
+  producer:
+    acks: all
+    compression_type: snappy
+    batch_size: 16384
+    linger_ms: 5
+    retry_backoff: 100ms
+    max_retries: 3
+  topics:
+    market_data_raw: market.data.raw
+    market_data_normalized: market.data.normalized
+    orders_incoming: orders.incoming
+    orders_executed: orders.executed
+    risk_metrics: risk.metrics
+    analytics_results: analytics.results
+
+database:
+  host: postgres
+  port: 5432
+  username: postgres
+  password: postgres
+  dbname: quantfinance
+  sslmode: disable
+  max_idle_conns: 10
+  max_open_conns: 50
+  conn_max_lifetime: 30m
+
+risk:
+  var_confidence_level: 0.99
+  es_confidence_level: 0.975
+  simulation_runs: 10000
+  historical_days: 252
+
+orderbook:
+  price_levels: 10
+  order_pool_size: 100000
+  snapshot_interval: 5s
+  persistence_enabled: true
+
+metrics:
+  prometheus:
+    enabled: true
+    port: 9090
+  interval: 15s
+
+processor:
+  workers: 8
+  batch_size: 100
+  processing_interval: 50ms
