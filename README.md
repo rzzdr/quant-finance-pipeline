@@ -14,7 +14,7 @@ The system will follow a modular design with these primary components:
 6. **Real-time Analytics Engine** - Computes expected shortfalls
 7. **API Layer** - Provides endpoints for system interaction
 
-![System Design.png](attachment:aa180a46-ea1d-4579-bd2d-5042e1c960a4:System_Design.png)
+![System Design.png](https://d1m9xrkgxpplbx.cloudfront.net/quant-finance-pipeline/System-Design.png)
 
 ---
 
@@ -146,7 +146,7 @@ The system will follow a modular design with these primary components:
 
 ## **Data Flow Architecture**
 
-![Data Flow.png](attachment:661f2c54-cf59-4913-ace4-fb2ae01d7f36:Data_Flow.png)
+![Data Flow.png](https://d1m9xrkgxpplbx.cloudfront.net/quant-finance-pipeline/Data-Flow.png)
 
 ## **Kafka Topic Design**
 
