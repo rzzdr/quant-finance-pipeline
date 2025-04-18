@@ -13,6 +13,51 @@ const (
 	AlertSeverityCritical
 )
 
+// Position represents a single position within a portfolio
+type Position struct {
+	Symbol         string
+	Quantity       float64
+	IsDerivative   bool
+	DerivativeInfo *RiskDerivativeInfo
+}
+
+// Portfolio represents a collection of positions
+type Portfolio struct {
+	ID        string
+	Name      string
+	Positions []Position
+	Owner     string
+	Created   time.Time
+	Updated   time.Time
+}
+
+// RiskDerivativeInfo contains information specific to derivative instruments
+type RiskDerivativeInfo struct {
+	UnderlyingSymbol  string
+	ExpiryDate        time.Time
+	StrikePrice       float64
+	OptionType        string // "call" or "put"
+	ImpliedVolatility float64
+	Delta             float64
+	Gamma             float64
+	Theta             float64
+	Vega              float64
+	Rho               float64
+	Greeks            *DerivativeGreeks
+}
+
+// RiskMarketData contains price and related information for a financial instrument used in risk calculations
+type RiskMarketData struct {
+	Symbol           string
+	Price            float64
+	BidPrice         float64
+	AskPrice         float64
+	Volume           int64
+	Timestamp        time.Time
+	UnderlyingSymbol string
+	DerivativeInfo   *RiskDerivativeInfo
+}
+
 // The Greeks for a derivative position
 type DerivativeGreeks struct {
 	Delta float64
@@ -70,6 +115,14 @@ type RiskMetrics struct {
 	SensitivityAnalysis SensitivityAnalysis
 }
 
+// A recommended hedging action
+type HedgingRecommendation struct {
+	Symbol        string
+	Quantity      float64
+	EstimatedCost float64
+	Description   string
+}
+
 // A single action in a hedging strategy
 type HedgingAction struct {
 	Instrument     string
@@ -81,11 +134,13 @@ type HedgingAction struct {
 
 // A hedging strategy for a portfolio
 type HedgingStrategy struct {
-	PortfolioID   string
-	Timestamp     time.Time
-	Actions       []HedgingAction
-	EstimatedCost float64
-	RiskReduction float64
+	PortfolioID     string
+	Timestamp       time.Time
+	Actions         []HedgingAction
+	EstimatedCost   float64
+	RiskReduction   float64
+	CurrentRisk     float64
+	Recommendations []HedgingRecommendation
 }
 
 // A risk limit for a portfolio
