@@ -1,0 +1,57 @@
+/bin/
+/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/go.work
+
+# Build artifacts
+build/
+dist/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+*.parquet
+*.feather
+*.pickle
+*.pkl
+*.h5
+*.hdf5
+*.sqlite
+*.db
+
+# Logs
+logs/
+*.log
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Temporary data
+tmp/
+temp/
+output/
+results/
+
+# Secrets and configurations
+config.ini
+secrets.yaml
+credentials.json
+.env
+
+# Test coverage
+coverage.txt
+cover.out
