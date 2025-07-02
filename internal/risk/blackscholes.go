@@ -10,7 +10,7 @@ import (
 
 // DerivativePricer interface defines methods for pricing derivatives
 type DerivativePricer interface {
-	Price(derivative *models.MarketData, underlying *models.MarketData) float64
+	PriceOption(derivative *models.MarketData, underlying *models.MarketData) float64
 	CalculateGreeks(derivative *models.MarketData, underlying *models.MarketData) *models.DerivativeGreeks
 }
 
@@ -40,8 +40,8 @@ func (bs *BlackScholesPricer) SetDividendYield(yield float64) {
 	bs.dividendYield = yield
 }
 
-// Price calculates the price of an option
-func (bs *BlackScholesPricer) Price(derivative *models.MarketData, underlying *models.MarketData) float64 {
+// PriceOption calculates the price of an option
+func (bs *BlackScholesPricer) PriceOption(derivative *models.MarketData, underlying *models.MarketData) float64 {
 	if derivative == nil || underlying == nil {
 		bs.log.Error("Cannot price option: derivative or underlying is nil")
 		return 0

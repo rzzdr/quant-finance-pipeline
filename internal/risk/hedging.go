@@ -331,9 +331,6 @@ func (hc *HedgingCalculator) generateMinimumVarianceHedge(
 		"TLT": -0.1, // 10% of hedge with TLT
 	}
 
-	// Total portfolio value (simplified)
-	portfolioValue := 1000000.0 // $1M portfolio
-
 	// Total hedge amount based on delta
 	hedgeAmount := -portfolioGreeks.Delta * 100 // Scale factor for demonstration
 

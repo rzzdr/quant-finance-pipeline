@@ -2,6 +2,7 @@ package risk
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -150,7 +151,7 @@ func (c *Calculator) CalculateRiskMetrics(ctx context.Context, portfolioID strin
 	riskMetrics.ExpectedShortfall = portfolioES
 
 	// Calculate individual position risks
-	c.calculatePositionRisks(ctx, portfolio, positionReturns, positionValues, portfolioES, riskMetrics)
+	c.calculatePositionRisks(portfolio, positionReturns, positionValues, portfolioES, riskMetrics)
 
 	c.log.Infof("Completed risk calculation for portfolio %s in %v", portfolioID, time.Since(startTime))
 	return riskMetrics, nil
@@ -190,7 +191,7 @@ func calculatePortfolioReturns(positionReturns map[string][]float64, positionVal
 }
 
 // calculatePositionRisks calculates risk metrics for individual positions
-func (c *Calculator) calculatePositionRisks(ctx context.Context, portfolio *models.Portfolio, positionReturns map[string][]float64,
+func (c *Calculator) calculatePositionRisks(portfolio *models.Portfolio, positionReturns map[string][]float64,
 	positionValues map[string]float64, portfolioES float64, riskMetrics *models.RiskMetrics) {
 
 	type positionRiskJob struct {
@@ -331,7 +332,7 @@ func (c *Calculator) applyScenario(portfolio *models.Portfolio, scenario *models
 			// Apply default shock based on scenario
 			if position.IsDerivative && position.DerivativeInfo != nil {
 				// For derivatives, apply more complex shock based on Greeks
-				valueChangePercent = calculateDerivativeScenarioImpact(position, scenario)
+				valueChangePercent = calculateDerivativeScenarioImpact(position)
 			} else {
 				// For other assets, use a simple percentage shock
 				valueChangePercent = -0.10 // Default 10% drop
@@ -354,9 +355,9 @@ func (c *Calculator) applyScenario(portfolio *models.Portfolio, scenario *models
 }
 
 // calculateDerivativeScenarioImpact calculates the impact of a scenario on a derivative position
-func calculateDerivativeScenarioImpact(position models.Position, scenario *models.StressScenario) float64 {
+func calculateDerivativeScenarioImpact(position models.Position) float64 {
 	// This is a simplified model for scenario impact
-	// In a real system, would use the Greeks and scenario parameters
+	// In a real system, would use the position's Greeks and scenario parameters
 
 	if position.DerivativeInfo == nil || position.DerivativeInfo.Greeks == nil {
 		return -0.15 // Default 15% drop for derivatives
@@ -374,14 +375,35 @@ func calculateDerivativeScenarioImpact(position models.Position, scenario *model
 }
 
 // GenerateHedgingStrategy generates a hedging strategy for a portfolio
-func (c *Calculator) GenerateHedgingStrategy(ctx context.Context, portfolioID string) (*models.HedgingStrategy, error) {
-	c.log.Infof("Generating hedging strategy for portfolio %s", portfolioID)
+// This method is maintained for backwards compatibility and now supports the
+// strategyType parameter to match the HedgingCalculator interface
+func (c *Calculator) GenerateHedgingStrategy(ctx context.Context, portfolioOrID interface{}, strategyType ...HedgingStrategyType) (*models.HedgingStrategy, error) {
+	var portfolio *models.Portfolio
+	var portfolioID string
+	var err error
 
-	// Get portfolio
-	portfolio, err := c.portfolioStore.GetPortfolio(portfolioID)
-	if err != nil {
-		c.log.Errorf("Failed to get portfolio %s: %v", portfolioID, err)
-		return nil, err
+	// Handle different types of first argument (for backwards compatibility)
+	switch v := portfolioOrID.(type) {
+	case string:
+		portfolioID = v
+		c.log.Infof("Generating hedging strategy for portfolio %s", portfolioID)
+		portfolio, err = c.portfolioStore.GetPortfolio(portfolioID)
+		if err != nil {
+			c.log.Errorf("Failed to get portfolio %s: %v", portfolioID, err)
+			return nil, err
+		}
+	case *models.Portfolio:
+		portfolio = v
+		portfolioID = portfolio.ID
+		c.log.Infof("Generating hedging strategy for portfolio %s", portfolioID)
+	default:
+		return nil, fmt.Errorf("invalid portfolio argument type: %T", portfolioOrID)
+	}
+
+	// Use default strategy type if not provided
+	var selectedStrategyType HedgingStrategyType = HedgingStrategyTypeDelta
+	if len(strategyType) > 0 {
+		selectedStrategyType = strategyType[0]
 	}
 
 	// Calculate portfolio risk before hedging
@@ -401,14 +423,25 @@ func (c *Calculator) GenerateHedgingStrategy(ctx context.Context, portfolioID st
 		CurrentRisk:   riskMetrics.ValueAtRisk,
 	}
 
-	// Generate hedging actions
-	actions, cost, riskReduction := c.generateHedgingActions(portfolio, riskMetrics)
+	// Generate hedging actions based on strategy type
+	var actions []models.HedgingAction
+	var cost, riskReduction float64
+
+	switch selectedStrategyType {
+	case HedgingStrategyTypeDeltaGamma, HedgingStrategyTypeMinimumVariance:
+		// For advanced strategies, just log a warning and fall back to delta hedging
+		c.log.Warnf("Strategy type %v not fully implemented in Calculator, falling back to delta hedging", selectedStrategyType)
+		fallthrough
+	default: // HedgingStrategyTypeDelta
+		actions, cost, riskReduction = c.generateHedgingActions(portfolio, riskMetrics)
+	}
+
 	strategy.Actions = actions
 	strategy.EstimatedCost = cost
 	strategy.RiskReduction = riskReduction
 
 	// Generate recommendations
-	strategy.Recommendations = c.generateHedgingRecommendations(portfolio, riskMetrics)
+	strategy.Recommendations = c.generateHedgingRecommendations(riskMetrics)
 
 	return strategy, nil
 }
@@ -453,8 +486,8 @@ func (c *Calculator) generateHedgingActions(portfolio *models.Portfolio, riskMet
 	return actions, totalCost, totalRiskReduction
 }
 
-// generateHedgingRecommendations generates additional hedging recommendations
-func (c *Calculator) generateHedgingRecommendations(portfolio *models.Portfolio, riskMetrics *models.RiskMetrics) []models.HedgingRecommendation {
+// generateHedgingRecommendations generates additional hedging recommendations based on risk metrics
+func (c *Calculator) generateHedgingRecommendations(riskMetrics *models.RiskMetrics) []models.HedgingRecommendation {
 	recommendations := make([]models.HedgingRecommendation, 0)
 
 	// Look for the positions that contribute most to overall risk
@@ -491,4 +524,14 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// GetPortfolio retrieves a portfolio by ID
+func (c *Calculator) GetPortfolio(id string) (*models.Portfolio, error) {
+	portfolio, err := c.portfolioStore.GetPortfolio(id)
+	if err != nil {
+		c.log.Errorf("Failed to get portfolio %s: %v", id, err)
+		return nil, err
+	}
+	return portfolio, nil
 }

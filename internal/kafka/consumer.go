@@ -12,11 +12,8 @@ import (
 
 // MessageHandler is a function that processes Kafka messages
 type MessageHandler func(*Message) error
-
-// Consumer wraps a Kafka consumer with additional functionality
 type Consumer struct {
 	consumer *kafka.Consumer
-	topic    string
 	log      *logger.Logger
 	wg       sync.WaitGroup
 	stopCh   chan struct{}
@@ -76,15 +73,15 @@ func (c *Consumer) ConsumeMessages(ctx context.Context, handler MessageHandler) 
 
 	go func() {
 		defer c.wg.Done()
-		c.log.Info("Starting consumer for topic: %s", c.topic)
+		c.log.Info("Starting consumer")
 
 		for {
 			select {
 			case <-ctx.Done():
-				c.log.Info("Context cancelled, stopping consumer for topic: %s", c.topic)
+				c.log.Info("Context cancelled, stopping consumer")
 				return
 			case <-c.stopCh:
-				c.log.Info("Consumer stopped for topic: %s", c.topic)
+				c.log.Info("Consumer stopped")
 				return
 			default:
 				// Poll for messages
@@ -227,7 +224,7 @@ func (c *Consumer) Stop() error {
 
 // ConsumeMessagesBatch consumes messages in batches
 func (c *Consumer) ConsumeMessagesBatch(ctx context.Context, batchSize int, timeout time.Duration, handler func([]*Message) error) error {
-	c.log.Infof("Starting batch consumer for topic: %s, batch size: %d", c.topic, batchSize)
+	c.log.Infof("Starting batch consumer with batch size: %d", batchSize)
 
 	for {
 		select {
@@ -289,22 +286,22 @@ func (c *Consumer) Close() error {
 	return c.consumer.Close()
 }
 
-// GetTopicPartitions gets the topic partitions
-func (c *Consumer) GetTopicPartitions(timeout time.Duration) ([]kafka.TopicPartition, error) {
-	metadata, err := c.consumer.GetMetadata(&c.topic, false, int(timeout.Milliseconds()))
+// GetTopicPartitions gets the topic partitions for a specific topic
+func (c *Consumer) GetTopicPartitions(topic string, timeout time.Duration) ([]kafka.TopicPartition, error) {
+	metadata, err := c.consumer.GetMetadata(&topic, false, int(timeout.Milliseconds()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
-	topic, exists := metadata.Topics[c.topic]
+	topicMetadata, exists := metadata.Topics[topic]
 	if !exists {
-		return nil, fmt.Errorf("topic %s not found", c.topic)
+		return nil, fmt.Errorf("topic %s not found", topic)
 	}
 
-	partitions := make([]kafka.TopicPartition, len(topic.Partitions))
-	for i, partition := range topic.Partitions {
+	partitions := make([]kafka.TopicPartition, len(topicMetadata.Partitions))
+	for i, partition := range topicMetadata.Partitions {
 		partitions[i] = kafka.TopicPartition{
-			Topic:     &c.topic,
+			Topic:     &topic,
 			Partition: int32(partition.ID),
 		}
 	}
@@ -324,13 +321,23 @@ func (c *Consumer) CommitMessage(msg *Message) ([]kafka.TopicPartition, error) {
 
 // StoreOffset stores the offset to be committed later
 func (c *Consumer) StoreOffset(msg *Message) error {
-	return c.consumer.StoreOffsets([]kafka.TopicPartition{
+	offsets, err := c.consumer.StoreOffsets([]kafka.TopicPartition{
 		{
 			Topic:     &msg.Topic,
 			Partition: msg.Partition,
 			Offset:    kafka.Offset(msg.Offset + 1),
 		},
 	})
+
+	if err != nil {
+		return err
+	}
+
+	if len(offsets) > 0 && offsets[0].Error != nil {
+		return offsets[0].Error
+	}
+
+	return nil
 }
 
 // Pause pauses consumption from the specified topic partitions

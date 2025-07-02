@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/rzzdr/quant-finance-pipeline/internal/kafka"
 	"github.com/rzzdr/quant-finance-pipeline/internal/market"
 	"github.com/rzzdr/quant-finance-pipeline/internal/risk"
+	"github.com/rzzdr/quant-finance-pipeline/internal/store"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/metrics"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/models"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/utils/logger"
@@ -20,10 +22,6 @@ import (
 
 const (
 	riskCalculationInterval = 5 * time.Minute
-)
-
-var (
-	configFile = flag.String("config", "config.yaml", "Path to configuration file")
 )
 
 func main() {
@@ -35,7 +33,7 @@ func main() {
 	log.Info("Starting Quantitative Finance Pipeline Risk Engine")
 
 	// Load configuration
-	cfg, err := config.Load(*configFile)
+	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -48,20 +46,33 @@ func main() {
 	recorder := metrics.NewRecorder()
 
 	// Create Kafka client
-	kafkaClient, err := kafka.NewClient(cfg.Kafka)
+	kafkaConfig := &kafka.Config{
+		BootstrapServers: strings.Join(cfg.Kafka.Brokers, ","),
+		GroupID:          cfg.Kafka.Consumer.GroupID,
+		AutoOffsetReset:  cfg.Kafka.Consumer.AutoOffsetReset,
+		SessionTimeout:   cfg.Kafka.Consumer.SessionTimeout,
+		ProducerAcks:     cfg.Kafka.Producer.Acks,
+	}
+	kafkaClient, err := kafka.NewClient(kafkaConfig)
 	if err != nil {
 		log.Fatalf("Failed to create Kafka client: %v", err)
 	}
+
+	// Create portfolio store
+	portfolioStore := store.NewInMemoryPortfolioStore()
+
+	// Create historical data store
+	historicalDataStore := store.NewInMemoryHistoricalDataStore()
 
 	// Create market data processor to receive market data
 	marketProcessor := market.NewProcessor(
 		kafkaClient,
 		market.ProcessorConfig{
-			KafkaTopic:   "market-data",
+			KafkaTopic:   cfg.Kafka.Topics.MarketDataNormalized,
 			KafkaGroupID: "risk-engine",
 			OrderBookConfig: market.OrderBookConfig{
-				MaxLevels: cfg.OrderBook.MaxLevels,
-				PoolSize:  cfg.OrderBook.PoolSize,
+				MaxLevels: cfg.OrderBook.PriceLevels,
+				PoolSize:  cfg.OrderBook.OrderPoolSize,
 			},
 		},
 		recorder,
@@ -73,96 +84,96 @@ func main() {
 			HistoricalDays:     cfg.Risk.HistoricalDays,
 			VaRConfidenceLevel: cfg.Risk.VaRConfidenceLevel,
 			ESConfidenceLevel:  cfg.Risk.ESConfidenceLevel,
+			SimulationRuns:     cfg.Risk.SimulationRuns,
+			WorkerCount:        4, // Default worker count
 		},
+		portfolioStore,
+		historicalDataStore,
 	)
 
 	// Create a consumer for portfolio updates
-	consumer:= kafka.NewConsumer(
-		kafkaClient,
-		kafka.ConsumerConfig{
+	portfolioConsumer, err := kafkaClient.NewConsumer(
+		[]string{cfg.Kafka.Topics.OrdersExecuted},
+		&kafka.ConsumerConfig{
 			GroupID:         "risk-engine",
 			AutoOffsetReset: "latest",
 		},
 	)
+	if err != nil {
+		log.Fatalf("Failed to create portfolio consumer: %v", err)
+	}
 
 	// Create a producer for risk results
-	producer := kafka.NewProducer(
-		kafkaClient,
-		kafka.ProducerConfig{
-			BatchSize:    100,
-			BatchTimeout: 100 * time.Millisecond,
-		},
-	)
+	riskProducer, err := kafkaClient.NewProducer(cfg.Kafka.Topics.RiskMetrics)
 	if err != nil {
-		log.Fatalf("Failed to create producer: %v", err)
+		log.Fatalf("Failed to create risk producer: %v", err)
+	}
+
+	// Start market data processor
+	if err := marketProcessor.Start(ctx); err != nil {
+		log.Fatalf("Failed to start market data processor: %v", err)
 	}
 
 	// Start consuming portfolio updates
-	err = consumer.Subscribe("portfolio-updates", func(ctx context.Context, msg kafka.Message) error {
-		// Parse portfolio update from message
-		var portfolio models.Portfolio
-		if err := portfolio.UnmarshalJSON(msg.Value); err != nil {
-			log.Errorf("Error parsing portfolio update: %v", err)
-			return nil // Don't retry, just log the error
+	go func() {
+		log.Info("Starting portfolio updates consumer")
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				message, err := portfolioConsumer.ConsumeMessage(ctx, 100*time.Millisecond)
+				if err != nil {
+					log.Errorf("Error consuming portfolio message: %v", err)
+					continue
+				}
+
+				if message == nil {
+					continue
+				}
+
+				// Deserialize the portfolio update
+				var portfolio models.Portfolio
+				if err := json.Unmarshal(message.Value, &portfolio); err != nil {
+					log.Errorf("Failed to unmarshal portfolio update: %v", err)
+					continue
+				}
+
+				// Save portfolio to store
+				err = portfolioStore.SavePortfolio(&portfolio)
+				if err != nil {
+					log.Errorf("Failed to save portfolio %s: %v", portfolio.ID, err)
+					continue
+				}
+
+				// Calculate risk metrics
+				riskMetrics, err := riskCalculator.CalculateRiskMetrics(ctx, portfolio.ID)
+				if err != nil {
+					log.Errorf("Failed to calculate risk metrics for portfolio %s: %v", portfolio.ID, err)
+					continue
+				}
+
+				// Serialize risk metrics
+				riskMetricsJson, err := json.Marshal(riskMetrics)
+				if err != nil {
+					log.Errorf("Failed to marshal risk metrics: %v", err)
+					continue
+				}
+
+				// Produce risk metrics
+				err = riskProducer.ProduceMessage(ctx, []byte(portfolio.ID), riskMetricsJson, nil)
+				if err != nil {
+					log.Errorf("Failed to produce risk metrics: %v", err)
+					continue
+				}
+
+				log.Infof("Calculated risk metrics for portfolio %s", portfolio.ID)
+			}
 		}
+	}()
 
-		// Update portfolio in risk calculator
-		riskCalculator.UpdatePortfolio(&portfolio)
-
-		// Calculate risk for this portfolio
-		result, err := riskCalculator.CalculateRisk(portfolio.ID)
-		if err != nil {
-			log.Errorf("Error calculating risk for portfolio %s: %v", portfolio.ID, err)
-			return nil
-		}
-
-		// Log the risk calculation
-		log.Infof("Risk calculation for portfolio %s: VaR=%.2f, ES=%.2f",
-			portfolio.ID, result.VaR, result.ES)
-		// Publish risk result to Kafka
-		resultData, err := json.Marshal(result)
-		if err != nil {
-			log.Errorf("Error marshaling risk result: %v", err)
-			return nil
-		}
-		}
-
-		resultMsg := kafka.Message{
-			Topic: "risk-results",
-			Key:   []byte(portfolio.ID),
-			Value: resultData,
-		}
-		err = producer.Publish(ctx, resultMsg)
-		if err != nil {
-			log.Errorf("Error publishing risk result: %v", err)
-			return nil
-		}
-
-		return nil
-	})
-	if err != nil {
-		log.Fatalf("Failed to subscribe to portfolio updates: %v", err)
-	}
-
-	// Start consuming market data for risk calculator
-	err = consumer.Subscribe("market-data", func(ctx context.Context, msg kafka.Message) error {
-		// Parse market data from message
-		var marketData models.MarketData
-		if err := marketData.UnmarshalJSON(msg.Value); err != nil {
-			log.Errorf("Error parsing market data: %v", err)
-			return nil // Don't retry, just log the error
-		}
-
-		// Update market data in risk calculator
-		riskCalculator.UpdateMarketData(&marketData)
-
-		return nil
-	})
-	if err != nil {
-		log.Fatalf("Failed to subscribe to market data: %v", err)
-	}
-
-	// Start periodic risk calculation for all portfolios
+	// Calculate risk metrics periodically for all portfolios
 	go func() {
 		ticker := time.NewTicker(riskCalculationInterval)
 		defer ticker.Stop()
@@ -173,15 +184,41 @@ func main() {
 				return
 			case <-ticker.C:
 				log.Info("Running periodic risk calculation for all portfolios")
-				riskCalculator.CalculateAllRisk()
+
+				// Get all portfolios
+				portfolios, err := portfolioStore.GetAllPortfolios()
+				if err != nil {
+					log.Errorf("Failed to get all portfolios: %v", err)
+					continue
+				}
+
+				// Calculate risk metrics for each portfolio
+				for _, portfolio := range portfolios {
+					riskMetrics, err := riskCalculator.CalculateRiskMetrics(ctx, portfolio.ID)
+					if err != nil {
+						log.Errorf("Failed to calculate risk metrics for portfolio %s: %v", portfolio.ID, err)
+						continue
+					}
+
+					// Serialize risk metrics
+					riskMetricsJson, err := json.Marshal(riskMetrics)
+					if err != nil {
+						log.Errorf("Failed to marshal risk metrics: %v", err)
+						continue
+					}
+
+					// Produce risk metrics
+					err = riskProducer.ProduceMessage(ctx, []byte(portfolio.ID), riskMetricsJson, nil)
+					if err != nil {
+						log.Errorf("Failed to produce risk metrics: %v", err)
+						continue
+					}
+
+					log.Infof("Calculated risk metrics for portfolio %s", portfolio.ID)
+				}
 			}
 		}
 	}()
-
-	// Start the consumer
-	if err := consumer.Start(); err != nil {
-		log.Fatalf("Failed to start consumer: %v", err)
-	}
 
 	log.Info("Risk engine started")
 
@@ -194,8 +231,8 @@ func main() {
 	log.Infof("Received signal %v, initiating shutdown", sig)
 
 	// Stop consumer
-	if err := consumer.Stop(); err != nil {
-		log.Errorf("Consumer shutdown error: %v", err)
+	if err := portfolioConsumer.Close(); err != nil {
+		log.Errorf("Portfolio consumer shutdown error: %v", err)
 	}
 
 	// Stop market data processor
@@ -204,9 +241,8 @@ func main() {
 	}
 
 	// Close producer
-	if err := producer.Close(); err != nil {
-		log.Errorf("Producer shutdown error: %v", err)
-	}
+	riskProducer.Close()
+	log.Info("Risk producer closed")
 
 	// Close Kafka client
 	if err := kafkaClient.Close(); err != nil {

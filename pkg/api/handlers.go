@@ -480,11 +480,11 @@ func (h *Handlers) PriceDerivativeHandler(c *gin.Context) {
 	}
 
 	// Price the derivative
-	price, err := h.bsPricer.PriceOption(derivative, underlyingData)
-	if err != nil {
-		h.log.Errorf("Failed to price derivative: %v", err)
+	price := h.bsPricer.PriceOption(derivative, underlyingData)
+	if price == 0 {
+		h.log.Error("Failed to price derivative: returned zero price")
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": fmt.Sprintf("Failed to price derivative: %v", err),
+			"error": "Failed to price derivative: could not calculate price",
 		})
 		return
 	}

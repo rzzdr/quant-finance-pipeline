@@ -14,6 +14,10 @@ const (
 	MarketDataTypeDepth
 	MarketDataTypeOHLC
 	MarketDataTypeIndex
+	MarketDataTypeBar
+	MarketDataTypeStats
+	MarketDataTypeNews
+	MarketDataTypeUnknown
 )
 
 // Defines the type of derivative

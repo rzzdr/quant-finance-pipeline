@@ -9,11 +9,14 @@ import (
 	"time"
 
 	"github.com/rzzdr/quant-finance-pipeline/config"
+	"github.com/rzzdr/quant-finance-pipeline/internal/adapters"
 	"github.com/rzzdr/quant-finance-pipeline/internal/kafka"
 	"github.com/rzzdr/quant-finance-pipeline/internal/market"
 	"github.com/rzzdr/quant-finance-pipeline/internal/risk"
+	"github.com/rzzdr/quant-finance-pipeline/internal/store"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/api"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/metrics"
+	"github.com/rzzdr/quant-finance-pipeline/pkg/models"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/utils/logger"
 )
 
@@ -42,10 +45,16 @@ func main() {
 	// Initialize metrics recorder
 	recorder := metrics.NewRecorder()
 
-	// Create Kafka client
-	kafkaClient := kafka.NewClient(&cfg.Kafka, log)
+	// Create metrics adapter to satisfy the market.MetricsRecorder interface
+	metricsAdapter := adapters.NewMetricsAdapter(recorder)
 
-	// Create market data processor
+	// Create Kafka client with nil config (using defaults)
+	kafkaClient, err := kafka.NewClient(nil)
+	if err != nil {
+		log.Fatalf("Failed to create Kafka client: %v", err)
+	}
+
+	// Create market processor with the metrics adapter
 	marketProcessor := market.NewProcessor(
 		kafkaClient,
 		market.ProcessorConfig{
@@ -56,10 +65,35 @@ func main() {
 				PoolSize:  cfg.OrderBook.OrderPoolSize,
 			},
 		},
-		recorder,
+		metricsAdapter, // Use our adapter that implements the market.MetricsRecorder interface
 	)
 
-	// Create risk calculator
+	// Create in-memory stores for portfolio and historical data
+	portfolioStore := store.NewInMemoryPortfolioStore()
+	historicalDataStore := store.NewInMemoryHistoricalDataStore()
+
+	// Add some sample portfolios
+	samplePortfolio := &models.Portfolio{
+		ID:   "sample-portfolio-1",
+		Name: "Sample Diversified Portfolio",
+		Positions: []models.Position{
+			{
+				Symbol:   "AAPL",
+				Quantity: 100,
+			},
+			{
+				Symbol:   "MSFT",
+				Quantity: 150,
+			},
+			{
+				Symbol:   "SPY",
+				Quantity: 200,
+			},
+		},
+	}
+	portfolioStore.SavePortfolio(samplePortfolio)
+
+	// Create risk calculator with our stores
 	riskCalculator := risk.NewCalculator(
 		risk.CalculatorConfig{
 			VaRConfidenceLevel: cfg.Risk.VaRConfidenceLevel,
@@ -68,8 +102,8 @@ func main() {
 			HistoricalDays:     cfg.Risk.HistoricalDays,
 			WorkerCount:        4, // Default worker count
 		},
-		nil, // Placeholder for portfolioStore - this would be replaced with an actual implementation
-		nil, // Placeholder for historicalDataStore - this would be replaced with an actual implementation
+		portfolioStore,
+		historicalDataStore,
 	)
 
 	// Start market data processor
@@ -77,7 +111,9 @@ func main() {
 		log.Fatalf("Failed to start market data processor: %v", err)
 	}
 
-	// Create API server
+	// Create market processor adapter for the API server
+	marketProcessorAdapter := adapters.NewMarketProcessorAdapter(marketProcessor)
+
 	apiServer := api.NewServer(
 		api.Config{
 			Host:         cfg.API.Host,
@@ -85,7 +121,7 @@ func main() {
 			ReadTimeout:  cfg.API.ReadTimeout,
 			WriteTimeout: cfg.API.WriteTimeout,
 		},
-		marketProcessor,
+		marketProcessorAdapter, // Use our adapter that implements market.Processor interface
 		riskCalculator,
 		recorder,
 	)

@@ -25,6 +25,18 @@ type Config struct {
 	ConsumerBatchSize int
 }
 
+// ConsumerConfig contains configuration for a Kafka consumer
+type ConsumerConfig struct {
+	GroupID         string
+	AutoOffsetReset string
+}
+
+// ProducerConfig contains configuration for a Kafka producer
+type ProducerConfig struct {
+	BatchSize    int
+	BatchTimeout time.Duration
+}
+
 // Message represents a Kafka message
 type Message struct {
 	Key       []byte
@@ -42,6 +54,10 @@ type MessageHeader struct {
 	Value []byte
 }
 
+// Consumer is defined in consumer.go
+
+// Producer is defined in producer.go
+
 // Client is a wrapper around Kafka clients
 type Client struct {
 	config *Config
@@ -49,11 +65,19 @@ type Client struct {
 }
 
 // NewClient creates a new Kafka client
-func NewClient(config *Config, log *logger.Logger) *Client {
+func NewClient(config *Config) (*Client, error) {
+	// Initialize default config if nil
+	if config == nil {
+		config = DefaultConfig()
+	}
+
+	// Create a logger
+	log := logger.GetLogger("kafka.client")
+
 	return &Client{
 		config: config,
 		log:    log,
-	}
+	}, nil
 }
 
 // NewProducer creates a new Kafka producer
@@ -101,13 +125,13 @@ func (c *Client) NewProducer(topic string) (*Producer, error) {
 }
 
 // NewConsumer creates a new Kafka consumer
-func (c *Client) NewConsumer(topic string) (*Consumer, error) {
+func (c *Client) NewConsumer(topics []string, consumerConfig *ConsumerConfig) (*Consumer, error) {
 	// Create configuration
 	config := &kafka.ConfigMap{
 		"bootstrap.servers":        c.config.BootstrapServers,
-		"group.id":                 c.config.GroupID,
+		"group.id":                 consumerConfig.GroupID,
 		"session.timeout.ms":       int(c.config.SessionTimeout.Milliseconds()),
-		"auto.offset.reset":        c.config.AutoOffsetReset,
+		"auto.offset.reset":        consumerConfig.AutoOffsetReset,
 		"enable.auto.commit":       c.config.EnableAutoCommit,
 		"enable.partition.eof":     false,
 		"enable.auto.offset.store": false,
@@ -134,19 +158,22 @@ func (c *Client) NewConsumer(topic string) (*Consumer, error) {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 
-	// Subscribe to topic
-	err = consumer.Subscribe(topic, nil)
-	if err != nil {
-		consumer.Close()
-		return nil, fmt.Errorf("failed to subscribe to topic %s: %w", topic, err)
+	// Create consumer wrapper
+	cons := &Consumer{
+		consumer: consumer,
+		log:      c.log,
 	}
 
-	// Create consumer wrapper
-	return &Consumer{
-		consumer: consumer,
-		topic:    topic,
-		log:      c.log,
-	}, nil
+	// Subscribe to topics
+	for _, topic := range topics {
+		err = consumer.Subscribe(topic, nil)
+		if err != nil {
+			consumer.Close()
+			return nil, fmt.Errorf("failed to subscribe to topic %s: %w", topic, err)
+		}
+	}
+
+	return cons, nil
 }
 
 // DefaultConfig returns a default configuration
@@ -278,5 +305,14 @@ func (c *Client) EnsureTopicExists(ctx context.Context, topic string, partitions
 	}
 
 	c.log.Infof("Successfully created topic %s", topic)
+	return nil
+}
+
+// Close closes the client and releases resources
+func (c *Client) Close() error {
+	c.log.Info("Closing Kafka client")
+	// This is a simple implementation - just logs the action
+	// Client doesn't maintain its own connections that need to be closed
+	// Consumers and Producers created from the client should be closed separately
 	return nil
 }
