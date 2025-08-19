@@ -38,6 +38,8 @@ type MetricsRecorder interface {
 	RecordOrderBookUpdate(symbol string, side string, size int)
 	RecordOrderBookImbalance(symbol string, imbalance float64)
 	RecordKafkaLag(topic, groupID string, lag int64)
+	RecordOrderProcessed(symbol, orderType, side string)
+	RecordOrderFilled(symbol, orderType, side string)
 }
 
 // MarketDataProcessor processes market data
@@ -356,7 +358,11 @@ func (p *MarketDataProcessor) AddProvider(provider MarketDataProvider) {
 
 // GetMarketData returns market data for a symbol
 func (p *MarketDataProcessor) GetMarketData(symbol string) (*models.MarketData, bool) {
-	return p.dataManager.GetMarketData(symbol)
+	data, err := p.dataManager.GetMarketData(symbol)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // GetOrderBook returns the order book for a symbol

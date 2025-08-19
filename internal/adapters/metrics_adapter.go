@@ -98,3 +98,17 @@ func (a *MetricsAdapter) RecordGoroutineCount(count int) {
 		a.recorder.RecordGoroutineCount(count)
 	}
 }
+
+// RecordOrderProcessed implements market.MetricsRecorder interface
+func (a *MetricsAdapter) RecordOrderProcessed(symbol, orderType, side string) {
+	if a.recorder != nil {
+		a.recorder.RecordOrderProcessed(symbol, orderType, side)
+	}
+}
+
+// RecordOrderFilled implements market.MetricsRecorder interface
+func (a *MetricsAdapter) RecordOrderFilled(symbol, orderType, side string) {
+	if a.recorder != nil {
+		a.recorder.RecordOrderFilled(symbol, orderType, side)
+	}
+}

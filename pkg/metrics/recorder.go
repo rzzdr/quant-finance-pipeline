@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -180,7 +181,7 @@ func NewRecorder() *Recorder {
 
 // RecordAPIRequest records metrics for an API request
 func (r *Recorder) RecordAPIRequest(method, path string, status int, latency time.Duration) {
-	statusStr := string(status)
+	statusStr := fmt.Sprintf("%d", status)
 	r.apiRequestCounter.WithLabelValues(method, path, statusStr).Inc()
 	r.apiLatencyHistogram.WithLabelValues(method, path).Observe(latency.Seconds())
 }
@@ -238,4 +239,16 @@ func (r *Recorder) RecordMemoryUsage(bytesUsed uint64) {
 // RecordGoroutineCount records the current number of goroutines
 func (r *Recorder) RecordGoroutineCount(count int) {
 	r.goroutineCountGauge.Set(float64(count))
+}
+
+// RecordOrderProcessed records when an order is processed
+func (r *Recorder) RecordOrderProcessed(symbol, orderType, side string) {
+	// Use the trade counter as a proxy for order processing
+	r.tradeCounter.WithLabelValues(symbol, side).Inc()
+}
+
+// RecordOrderFilled records when an order is filled
+func (r *Recorder) RecordOrderFilled(symbol, orderType, side string) {
+	// Use the trade counter as a proxy for order fills
+	r.tradeCounter.WithLabelValues(symbol, side).Inc()
 }

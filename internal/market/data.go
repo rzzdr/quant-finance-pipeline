@@ -3,6 +3,7 @@ package market
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -363,17 +364,22 @@ func (m *DataManager) UpdateMarketData(data *models.MarketData) {
 	}
 }
 
+// Start initializes the data manager
+func (m *DataManager) Start(ctx context.Context) error {
+	m.log.Info("Data manager started")
+	return nil
+}
+
 // GetMarketData retrieves market data for a symbol
-func (m *DataManager) GetMarketData(symbol string) (*models.MarketData, bool) {
+func (m *DataManager) GetMarketData(symbol string) (*models.MarketData, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	data, exists := m.marketData[symbol]
 	if !exists {
-		return nil, false
+		return nil, fmt.Errorf("market data not found for symbol: %s", symbol)
 	}
-
-	return data.DeepCopy(), true
+	return data.DeepCopy(), nil
 }
 
 // GetAllMarketData retrieves all market data
