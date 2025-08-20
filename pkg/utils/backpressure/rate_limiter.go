@@ -150,7 +150,8 @@ func (tb *TokenBucketLimiter) Burst() int {
 // TokensRemaining returns the number of tokens remaining
 func (tb *TokenBucketLimiter) TokensRemaining() int {
 	tb.mutex.RLock()
-	defer tb.mutex.RUnlock()
+	tb.mutex.Lock()
+	defer tb.mutex.Unlock()
 
 	now := time.Now().UnixNano()
 	tb.refillTokens(now)
