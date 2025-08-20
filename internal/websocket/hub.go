@@ -321,7 +321,9 @@ func (c *Client) sendMessage(msg Message) {
 
 	select {
 	case c.send <- data:
-	default:
+		// message sent successfully
+	case <-time.After(clientSendTimeout):
+		// sending timed out, close the client
 		close(c.send)
 		delete(c.hub.clients, c)
 	}
