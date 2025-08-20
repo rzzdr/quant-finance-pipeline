@@ -53,26 +53,10 @@ type MarketDataUpdate struct {
 	Source    string
 }
 
-// MarketDataSubscription represents a subscription to market data
-type MarketDataSubscription struct {
-	ID           string
-	Symbols      []string
-	Types        []models.MarketDataType
-	Channel      chan *models.MarketData
-	ErrorChannel chan error
-	Active       bool
-}
-
-// MarketDataProvider defines the interface for market data providers
-type MarketDataProvider interface {
-	// Connect establishes a connection to the market data source
-	Connect() error
-	// Disconnect closes the connection to the market data source
-	Disconnect() error
-	// Subscribe subscribes to market data for the given symbols and types
-	Subscribe(symbols []string, types []models.MarketDataType) (*MarketDataSubscription, error)
-	// Unsubscribe cancels a market data subscription
-	Unsubscribe(subscription *MarketDataSubscription) error
+// ExtendedMarketDataProvider defines the extended interface for market data providers
+// This adds to the MarketDataProvider interface defined in processor.go
+type ExtendedMarketDataProvider interface {
+	MarketDataProvider
 	// GetSnapshot returns a snapshot of market data for the given symbol and type
 	GetSnapshot(symbol string, dataType models.MarketDataType) (*models.MarketData, error)
 }
@@ -85,22 +69,10 @@ type HistoricalDataProvider interface {
 	GetDataBatch(symbols []string, dataType models.MarketDataType, startTime, endTime time.Time, interval time.Duration) (map[string][]*models.MarketData, error)
 }
 
-// MarketDataAggregator aggregates market data from multiple sources
-type MarketDataAggregator struct {
-	Providers           []MarketDataProvider
-	ConsolidatedFeed    chan *models.MarketData
-	SubscriptionsByID   map[string]*MarketDataSubscription
-	SymbolSubscriptions map[string][]*MarketDataSubscription
-}
-
-// NewMarketDataAggregator creates a new MarketDataAggregator
-func NewMarketDataAggregator(providers []MarketDataProvider) *MarketDataAggregator {
-	return &MarketDataAggregator{
-		Providers:           providers,
-		ConsolidatedFeed:    make(chan *models.MarketData, 10000),
-		SubscriptionsByID:   make(map[string]*MarketDataSubscription),
-		SymbolSubscriptions: make(map[string][]*MarketDataSubscription),
-	}
+// MarketDataAggregatorConfig is configuration for MarketDataAggregator
+type MarketDataAggregatorConfig struct {
+	BufferSize int
+	LogLevel   string
 }
 
 // OrderSide represents the side of an order
@@ -299,6 +271,10 @@ func MarketDataTypeToString(dataType models.MarketDataType) string {
 		return "quote"
 	case models.MarketDataTypeDepth:
 		return "depth"
+	case models.MarketDataTypeOHLC:
+		return "ohlc"
+	case models.MarketDataTypeIndex:
+		return "index"
 	case models.MarketDataTypeBar:
 		return "bar"
 	case models.MarketDataTypeStats:
@@ -319,6 +295,10 @@ func StringToMarketDataType(dataType string) models.MarketDataType {
 		return models.MarketDataTypeQuote
 	case "depth":
 		return models.MarketDataTypeDepth
+	case "ohlc":
+		return models.MarketDataTypeOHLC
+	case "index":
+		return models.MarketDataTypeIndex
 	case "bar":
 		return models.MarketDataTypeBar
 	case "stats":

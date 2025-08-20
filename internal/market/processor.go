@@ -6,10 +6,18 @@ import (
 	"time"
 
 	"github.com/rzzdr/quant-finance-pipeline/internal/kafka"
-	"github.com/rzzdr/quant-finance-pipeline/pkg/metrics"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/models"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/utils/logger"
 )
+
+// Processor defines the interface for market data processing
+type Processor interface {
+	GetMarketData(symbol string) (*models.MarketData, error)
+	GetOrderBook(symbol string) (*models.OrderBook, error)
+	PlaceOrder(order *models.Order) (interface{}, error)
+	GetOrder(orderID string) (*models.Order, error)
+	CancelOrder(orderID string) error
+}
 
 // ProcessorConfig contains configuration for the market processor
 type ProcessorConfig struct {
@@ -24,6 +32,16 @@ type OrderBookConfig struct {
 	PoolSize  int
 }
 
+// MetricsRecorder defines the interface for recording metrics
+type MetricsRecorder interface {
+	RecordMarketDataUpdate(symbol, dataType string, latency time.Duration)
+	RecordOrderBookUpdate(symbol string, side string, size int)
+	RecordOrderBookImbalance(symbol string, imbalance float64)
+	RecordKafkaLag(topic, groupID string, lag int64)
+	RecordOrderProcessed(symbol, orderType, side string)
+	RecordOrderFilled(symbol, orderType, side string)
+}
+
 // MarketDataProcessor processes market data
 type MarketDataProcessor struct {
 	kafkaClient     *kafka.Client
@@ -31,7 +49,7 @@ type MarketDataProcessor struct {
 	dataManager     *DataManager
 	aggregator      *MarketDataAggregator
 	bookManager     map[string]*OrderBook
-	metricsRecorder metrics.Recorder
+	metricsRecorder MetricsRecorder
 	log             *logger.Logger
 	ctx             context.Context
 	cancel          context.CancelFunc
@@ -71,7 +89,7 @@ type MarketDataAggregator struct {
 func NewProcessor(
 	kafkaClient *kafka.Client,
 	config ProcessorConfig,
-	metricsRecorder metrics.Recorder,
+	metricsRecorder MetricsRecorder,
 ) *MarketDataProcessor {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -104,10 +122,13 @@ func (p *MarketDataProcessor) Start(ctx context.Context) error {
 	p.log.Info("Starting market data processor")
 
 	// Create a consumer for market data
-	consumer, err := p.kafkaClient.NewConsumer(kafka.ConsumerConfig{
-		Topic:   p.config.KafkaTopic,
-		GroupID: p.config.KafkaGroupID,
-	})
+	consumer, err := p.kafkaClient.NewConsumer(
+		[]string{p.config.KafkaTopic},
+		&kafka.ConsumerConfig{
+			GroupID:         p.config.KafkaGroupID,
+			AutoOffsetReset: "earliest",
+		},
+	)
 
 	if err != nil {
 		p.log.Errorf("Failed to create Kafka consumer: %v", err)
@@ -148,7 +169,7 @@ func (p *MarketDataProcessor) consumeMarketData(consumer *kafka.Consumer) {
 			return
 		default:
 			// Consume messages
-			msg, err := consumer.ConsumeMessage(p.ctx)
+			msg, err := consumer.ConsumeMessage(p.ctx, 100*time.Millisecond)
 			if err != nil {
 				if p.ctx.Err() != nil {
 					// Context canceled, exit gracefully
@@ -182,9 +203,7 @@ func (p *MarketDataProcessor) processMarketData(data *models.MarketData) {
 	latency := receiveTime.Sub(data.Timestamp)
 
 	// Record metrics
-	p.metricsRecorder.RecordLatency("market_data_latency", latency.Milliseconds(),
-		metrics.Tag{Key: "symbol", Value: data.Symbol},
-		metrics.Tag{Key: "source", Value: data.Exchange})
+	p.metricsRecorder.RecordMarketDataUpdate(data.Symbol, MarketDataTypeToString(data.DataType), latency)
 
 	// Update our internal market data store
 	p.dataManager.UpdateMarketData(data)
@@ -339,7 +358,11 @@ func (p *MarketDataProcessor) AddProvider(provider MarketDataProvider) {
 
 // GetMarketData returns market data for a symbol
 func (p *MarketDataProcessor) GetMarketData(symbol string) (*models.MarketData, bool) {
-	return p.dataManager.GetMarketData(symbol)
+	data, err := p.dataManager.GetMarketData(symbol)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
 }
 
 // GetOrderBook returns the order book for a symbol

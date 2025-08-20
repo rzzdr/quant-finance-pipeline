@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/rzzdr/quant-finance-pipeline/config"
@@ -26,8 +27,11 @@ func main() {
 	log := logger.GetLogger("processor.main")
 	log.Info("Starting Quantitative Finance Pipeline Market Data Processor")
 
+	// Set config path in environment variable
+	os.Setenv("QUANT_CONFIG_PATH", *configFile)
+
 	// Load configuration
-	cfg, err := config.Load(*configFile)
+	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
@@ -39,8 +43,17 @@ func main() {
 	// Initialize metrics recorder
 	recorder := metrics.NewRecorder()
 
+	// Create Kafka client config
+	kafkaConfig := &kafka.Config{
+		BootstrapServers: strings.Join(cfg.Kafka.Brokers, ","),
+		GroupID:          cfg.Kafka.Consumer.GroupID,
+		AutoOffsetReset:  cfg.Kafka.Consumer.AutoOffsetReset,
+		SessionTimeout:   cfg.Kafka.Consumer.SessionTimeout,
+		ProducerAcks:     cfg.Kafka.Producer.Acks,
+	}
+
 	// Create Kafka client
-	kafkaClient, err := kafka.NewClient(cfg.Kafka)
+	kafkaClient, err := kafka.NewClient(kafkaConfig)
 	if err != nil {
 		log.Fatalf("Failed to create Kafka client: %v", err)
 	}
@@ -52,8 +65,8 @@ func main() {
 			KafkaTopic:   "market-data",
 			KafkaGroupID: "market-processor",
 			OrderBookConfig: market.OrderBookConfig{
-				MaxLevels: cfg.OrderBook.MaxLevels,
-				PoolSize:  cfg.OrderBook.PoolSize,
+				MaxLevels: cfg.OrderBook.PriceLevels,
+				PoolSize:  cfg.OrderBook.OrderPoolSize,
 			},
 		},
 		recorder,

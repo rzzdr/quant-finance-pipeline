@@ -217,18 +217,19 @@ func (p *Producer) BeginTransaction() error {
 
 // CommitTransaction commits the current transaction
 func (p *Producer) CommitTransaction(ctx context.Context) error {
-	timeout := int(p.timeout.Milliseconds())
-	return p.producer.CommitTransaction(timeout)
+	return p.producer.CommitTransaction(ctx)
 }
 
 // AbortTransaction aborts the current transaction
 func (p *Producer) AbortTransaction(ctx context.Context) error {
-	timeout := int(p.timeout.Milliseconds())
-	return p.producer.AbortTransaction(timeout)
+	return p.producer.AbortTransaction(ctx)
 }
 
 // SendOffsetsToTransaction sends the consumer offsets to the transaction
 func (p *Producer) SendOffsetsToTransaction(ctx context.Context, offsets []kafka.TopicPartition, consumer *kafka.Consumer) error {
-	timeout := int(p.timeout.Milliseconds())
-	return p.producer.SendOffsetsToTransaction(offsets, consumer, timeout)
+	cgMetadata, err := consumer.GetConsumerGroupMetadata()
+	if err != nil {
+		return err
+	}
+	return p.producer.SendOffsetsToTransaction(ctx, offsets, cgMetadata)
 }

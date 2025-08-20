@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rzzdr/quant-finance-pipeline/internal/market"
 	"github.com/rzzdr/quant-finance-pipeline/internal/risk"
 	"github.com/rzzdr/quant-finance-pipeline/pkg/metrics"
@@ -26,14 +27,14 @@ type Server struct {
 	config          Config
 	router          *mux.Router
 	httpServer      *http.Server
-	marketProcessor *market.Processor
+	marketProcessor market.Processor // Changed from pointer to interface to interface
 	riskCalculator  *risk.Calculator
 	metricsRecorder *metrics.Recorder
 	log             *logger.Logger
 }
 
 // NewServer creates a new API server
-func NewServer(config Config, marketProcessor *market.Processor, riskCalculator *risk.Calculator, metricsRecorder *metrics.Recorder) *Server {
+func NewServer(config Config, marketProcessor market.Processor, riskCalculator *risk.Calculator, metricsRecorder *metrics.Recorder) *Server {
 	// Apply defaults if needed
 	if config.ReadTimeout <= 0 {
 		config.ReadTimeout = 10 * time.Second
@@ -97,6 +98,9 @@ func (s *Server) setupRoutes() {
 	// Health check endpoint
 	api.HandleFunc("/health", s.handleHealth).Methods("GET")
 
+	// Metrics endpoint for Prometheus
+	s.router.Handle("/metrics", promhttp.Handler())
+
 	// Market data endpoints
 	market := api.PathPrefix("/market").Subrouter()
 	market.HandleFunc("/symbols", s.handleGetSymbols).Methods("GET")
@@ -122,12 +126,6 @@ func (s *Server) setupRoutes() {
 	orders.HandleFunc("/{id}", s.handleGetOrder).Methods("GET")
 	orders.HandleFunc("/{id}", s.handleCancelOrder).Methods("DELETE")
 	orders.HandleFunc("/{id}/modify", s.handleModifyOrder).Methods("PUT")
-
-	// Metrics endpoints
-	metrics := api.PathPrefix("/metrics").Subrouter()
-	metrics.HandleFunc("", s.handleGetMetrics).Methods("GET")
-	metrics.HandleFunc("/latency", s.handleGetLatencyMetrics).Methods("GET")
-	metrics.HandleFunc("/throughput", s.handleGetThroughputMetrics).Methods("GET")
 
 	// Documentation
 	s.router.PathPrefix("/docs/").Handler(http.StripPrefix("/docs/", http.FileServer(http.Dir("./docs"))))
@@ -207,16 +205,4 @@ func (w *ResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// Handler functions for endpoints can be implemented here
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	RespondJSON(w, http.StatusOK, map[string]string{
-		"status": "ok",
-		"time":   time.Now().Format(time.RFC3339),
-	})
-}
-
-func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
-	RespondError(w, http.StatusNotFound, "Resource not found")
-}
-
-// More handler functions for specific endpoints will be implemented in routes.go
+// Handler functions for endpoints are implemented in routes.go
