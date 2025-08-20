@@ -181,7 +181,7 @@ func NewRecorder() *Recorder {
 
 // RecordAPIRequest records metrics for an API request
 func (r *Recorder) RecordAPIRequest(method, path string, status int, latency time.Duration) {
-	statusStr := fmt.Sprintf("%d", status)
+	statusStr := strconv.Itoa(status)
 	r.apiRequestCounter.WithLabelValues(method, path, statusStr).Inc()
 	r.apiLatencyHistogram.WithLabelValues(method, path).Observe(latency.Seconds())
 }
