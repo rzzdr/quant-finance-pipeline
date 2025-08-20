@@ -130,7 +130,11 @@ func parseQueryParams(r *http.Request) (limit, offset int, sort string, err erro
 func (s *Server) handleGetSymbols(w http.ResponseWriter, r *http.Request) {
 	// Mock implementation for available symbols since there's an interface issue
 	symbols := []string{"AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "NFLX"}
-	// In a real implementation, we would call s.marketProcessor's method
+	symbols, err := s.marketProcessor.GetSymbols()
+	if err != nil {
+		RespondError(w, http.StatusInternalServerError, "Failed to fetch symbols")
+		return
+	}
 
 	// Extract query for filtering
 	query := r.URL.Query().Get("q")
