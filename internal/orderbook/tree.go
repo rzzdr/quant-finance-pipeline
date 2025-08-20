@@ -137,7 +137,15 @@ func randomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	if _, err := rand.Read(b); err != nil {
+		// fallback: use time-based, but this should rarely happen
+		for i := range b {
+			b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		}
+		return string(b)
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
 	}
 	return string(b)
 }
