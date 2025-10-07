@@ -23,22 +23,20 @@ The system will follow a modular design with these primary components:
 ## **1.1 Environment Configuration**
 
 - Set up the development environment with Go
-- Configure Kafka cluster with at least 3 nodes for fault tolerance
-- Establish CI/CD pipeline using GitHub Actions or similar
+- Configure a Kafka cluster with at least 3 nodes for fault tolerance
 - Create a containerized development environment using Docker
 
 ## **1.2 Core Data Structures**
 
 - Design data models for market data representation
-- Implement efficient serialization/deserialization using Protocol Buffers or Avro
-- Create an initial database schema for persistent storage (PostgreSQL/TimescaleDB) (I’ll decide later)
+- Implement efficient serialization/deserialization using Protocol Buffers
+- Create an initial database schema for persistent storage (TimescaleDB) (I’ll decide later)
 
 ## **1.3 Basic Pipeline Implementation**
 
 - Develop producer modules that publish Kafka topics
 - Create consumer groups for parallel processing
 - Implement error handling and retry mechanisms
-- Add monitoring with Prometheus and Grafana
 
 ---
 
